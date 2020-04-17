@@ -1,0 +1,1036 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Here are some common libraries that expand the functionality of python\n",
+    "import math         # sine, cosine, sqrt, etc.\n",
+    "import numpy as np  # so we can work with matrices\n",
+    "\n",
+    "import matplotlib\n",
+    "import matplotlib.pyplot as plt # plotting\n",
+    "import sympy as sp # symbolic calculations"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "DoF = 3"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# [x1,y1], ... the (x,y) position of node 1, 2, 3...\n",
+    "global nodes\n",
+    "nodes = np.array([\n",
+    "    [0,0],\n",
+    "    [1.25,0],\n",
+    "    [2.5,0],\n",
+    "    [3.75,0],\n",
+    "    [5,0],\n",
+    "    [6.25,0],\n",
+    "    [7.5,0],\n",
+    "    [8.75,0],\n",
+    "    [10,0]\n",
+    "])\n",
+    "# a list of all the nodes\n",
+    "node_numbers = np.array([*range(len(nodes))])\n",
+    "global node_DoF\n",
+    "node_DoF = np.array([*range(DoF*len(nodes))])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# element e is connected at nodes i and j\n",
+    "# element e: [node i, node j, Young's Modulus, Cross Sectional Area,Second Moment of Area] ... note: we'll calculate L later\n",
+    "global elements\n",
+    "elements = np.array([\n",
+    "    [1,2,2e11,1e-5,1e-6],\n",
+    "    [2,3,2e11,1e-5,1e-6],\n",
+    "    [3,4,2e11,1e-5,1e-6],\n",
+    "    [4,5,2e11,1e-5,1e-6],\n",
+    "    [5,6,2e11,1e-5,1e-6],\n",
+    "    [6,7,2e11,1e-5,1e-6],\n",
+    "    [7,8,2e11,1e-5,1e-6],\n",
+    "    [8,9,2e11,1e-5,1e-6],\n",
+    "    \n",
+    "\n",
+    "])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "image/png": "iVBORw0KGgoAAAANSUhEUgAAAV0AAAARCAYAAAB+ZX8UAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAALEgAACxIB0t1+/AAAADh0RVh0U29mdHdhcmUAbWF0cGxvdGxpYiB2ZXJzaW9uMy4xLjMsIGh0dHA6Ly9tYXRwbG90bGliLm9yZy+AADFEAAABBElEQVR4nO3awWnDQBBA0T++xQWkgxjSgToJpEBBKkoPuetoTxqwLZaMVmvnP9iTQPPRYQ6LIjORJPVx2DtAkv4Tl64kdeTSlaSOXLqS1JFLV5I6Klu6ETFFxBIReeUsETFVzXqGrpHb7LLLru26ouqXsYiYgQ9uL/If4LtkWJt34PXO8726YNw2u9rY1eYRuy7AV2Z+/nVI5fXCaeV9L4WzWhxXnu/VBeO22dXGrjaP2HUA3kqmZGbJAWbgDOSVcwbmqlnP0DVym1122bVdV2XwBCw3ghdg2ulDDtk1cptddtm1XVfZna4kaZ2/jElSRy5dSerIpStJHbl0Jakjl64kdfQLK2IxUf8o/A4AAAAASUVORK5CYII=\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "# set axes aspect ratio = 1\n",
+    "# turn off the axis\n",
+    "plt.axes().set_aspect('equal') \n",
+    "plt.axis('off') \n",
+    "\n",
+    "# plot the nodes\n",
+    "plt.plot(nodes[:,0], nodes[:,1], 'k.',markersize=15)\n",
+    "# plot the elements\n",
+    "# loop through the list of elements, grab the x position and y position of each node associated with that element\n",
+    "# the line: 'elements[i,0]-1' is necessary because python starts counting at 0, not 1 (like MATLAB)\n",
+    "for i in range(len(elements)):\n",
+    "    plt.plot(np.array([\n",
+    "    nodes[int(elements[i,0]-1),0], nodes[int(elements[i,1]-1),0]]),\n",
+    "         np.array([nodes[int(elements[i,0]-1),1], nodes[int(elements[i,1]-1),1]]),\n",
+    "         'k-')\n",
+    "plt.show()\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# dirichlet boundary conditions\n",
+    "# [node, DoF (x=1, y=2 , theta=3), value]  THETA ADDED\n",
+    "#number of node as on the image \n",
+    "bc = np.array([\n",
+    "    [1,2,0],\n",
+    "    [1,1,0],\n",
+    "    [9,2,0],\n",
+    "    [9,1,0]\n",
+    "])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# neumann boundary conditions - e.g. forces\n",
+    "# [node, DoF (x=1,y=2,theta = 3), magnitude of force]\n",
+    "forces = np.array([\n",
+    "    [2,2, -10e3], \n",
+    "    [3,2,-10e3],\n",
+    "    [4,2, -10e3], \n",
+    "    [5,2,-10e3],\n",
+    "    [6,2, -10e3], \n",
+    "    [7,2,-10e3],\n",
+    "    [8,2, -10e3], \n",
+    "  \n",
+    "])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# initializing the vectors F, u, and the matrix K\n",
+    "ForcesandMoments = u = np.zeros(DoF*len(nodes)) #[N_i,V_i,M_i,N_j,V_j,M_j]\n",
+    "K0 = np.zeros([DoF*len(nodes), DoF*len(nodes)])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def XY(nodes, elements, i):\n",
+    "    return np.array([\n",
+    "        nodes[int(elements[i,0]-1)],\n",
+    "        nodes[int(elements[i,1]-1)]\n",
+    "    ])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# for element e, what degrees of freedom in the structure do the nodes correspond to?\n",
+    "def elementDoF(node_DoF, elements, i):\n",
+    "    node_i = int(elements[i,:DoF][0])-1 # -1 is for python counting\n",
+    "    node_j = int(elements[i,:DoF][1])-1 # -1 is for python counting\n",
+    "    \n",
+    "    elementDoF = np.array([\n",
+    "        [node_DoF[DoF*node_i]],\n",
+    "        [node_DoF[DoF*node_i+1]],\n",
+    "        [node_DoF[DoF*node_i+2]],\n",
+    "        [node_DoF[DoF*node_j]],\n",
+    "        [node_DoF[DoF*node_j+1]],\n",
+    "        [node_DoF[DoF*node_j+2]],\n",
+    "    ])\n",
+    "\n",
+    "    return elementDoF"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# elemental stiffness matrix in global coordinates\n",
+    "def Kel(element):\n",
+    "    XY1 = XY(nodes,elements,element)\n",
+    "    x1, y1, x2, y2 = XY1[0,0], XY1[0,1], XY1[1,0], XY1[1,1]\n",
+    "    E = elements[element][2]\n",
+    "    A = elements[element][3]\n",
+    "    I = elements[element][4]\n",
+    "    L = math.sqrt((x2-x1)**2 + (y2-y1)**2)\n",
+    "    c = (x2-x1)/L\n",
+    "    s = (y2-y1)/L\n",
+    "        \n",
+    "    #KGLOBAL = TRANSPOSE(T)*KLOCAL*T\n",
+    "    \n",
+    "    Kel_L =np.array([\n",
+    "        [E*A/L,0,0,-E*A/L,0,0],\n",
+    "        [0,12*E*I/(L**3),6*E*I/(L**2),0,-12*E*I/(L**3),6*E*I/(L**2)],\n",
+    "        [0,6*E*I/(L**2),4*E*I/L,0,-6*E*I/(L**2),2*E*I/L],\n",
+    "        [-E*A/L,0,-12*E*I/(L**3),E*A/L,0,0],\n",
+    "        [0,-12*E*I/(L**3),-6*E*I/(L**2),0,12*E*I/(L**3),-6*E*I/(L**2)],\n",
+    "        [0,6*E*I/(L**2),2*E*I/L,0,-6*E*I/(L**2),4*E*I/L]\n",
+    "    ]) \n",
+    "    \n",
+    "    T = np.array([\n",
+    "        [c,s,0,0,0,0],\n",
+    "        [-s,c,0,0,0,0],\n",
+    "        [0,0,1,0,0,0],\n",
+    "        [0,0,0,c,s,0],\n",
+    "        [0,0,0,-s,c,0],\n",
+    "        [0,0,0,0,0,1]\n",
+    "        ])\n",
+    "    \n",
+    "    Kel = np.transpose(T).dot(Kel_L).dot(T)\n",
+    "     \n",
+    "    return Kel"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([[ 1600000.,        0.,        0., -1600000.,        0.,        0.],\n",
+       "       [       0.,  1228800.,   768000.,        0., -1228800.,   768000.],\n",
+       "       [       0.,   768000.,   640000.,        0.,  -768000.,   320000.],\n",
+       "       [-1600000.,        0., -1228800.,  1600000.,        0.,        0.],\n",
+       "       [       0., -1228800.,  -768000.,        0.,  1228800.,  -768000.],\n",
+       "       [       0.,   768000.,   320000.,        0.,  -768000.,   640000.]])"
+      ]
+     },
+     "execution_count": 12,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "Kel(1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# augment the elemental stiffness matrix by adding rows & columns of zeroes at the missing nodes\n",
+    "def Kaug(e):\n",
+    "    \"\"\"\"\"\"\n",
+    "    Kel1 = Kel(e)\n",
+    "    kaug = np.zeros([DoF*len(nodes), DoF*len(nodes)])\n",
+    "    i = elementDoF(node_DoF, elements, e)[0][0]#0 \n",
+    "    j = elementDoF(node_DoF, elements, e)[1][0]#1\n",
+    "    m = elementDoF(node_DoF, elements, e)[2][0]#2\n",
+    "    k = elementDoF(node_DoF, elements, e)[3][0]#3\n",
+    "    l = elementDoF(node_DoF, elements, e)[4][0]#4\n",
+    "    n = elementDoF(node_DoF, elements, e)[5][0]#5\n",
+    "    \n",
+    "    kaug[i][i] += Kel1[0][0] \n",
+    "    kaug[i][j] += Kel1[0][1]\n",
+    "    kaug[i][m] += Kel1[0][2]\n",
+    "    kaug[j][i] += Kel1[1][0]\n",
+    "    kaug[j][j] += Kel1[1][1]\n",
+    "    kaug[j][m] += Kel1[1][2]\n",
+    "    kaug[m][i] += Kel1[2][0]\n",
+    "    kaug[m][j] += Kel1[2][1]\n",
+    "    kaug[m][m] += Kel1[2][2]\n",
+    "\n",
+    "    kaug[k][k] += Kel1[3][3]\n",
+    "    kaug[k][l] += Kel1[3][4]\n",
+    "    kaug[k][n] += Kel1[3][5]\n",
+    "    kaug[l][k] += Kel1[4][3]\n",
+    "    kaug[l][l] += Kel1[4][4]\n",
+    "    kaug[l][n] += Kel1[4][5]\n",
+    "    kaug[n][k] += Kel1[5][3]\n",
+    "    kaug[n][l] += Kel1[5][4]\n",
+    "    kaug[n][n] += Kel1[5][5]    \n",
+    "    \n",
+    "    kaug[i][k] += Kel1[0][3]\n",
+    "    kaug[i][l] += Kel1[0][4]    \n",
+    "    kaug[i][n] += Kel1[0][5]\n",
+    "    kaug[j][k] += Kel1[1][3]    \n",
+    "    kaug[j][l] += Kel1[1][4]\n",
+    "    kaug[j][n] += Kel1[1][5]    \n",
+    "    kaug[m][k] += Kel1[2][3]\n",
+    "    kaug[m][l] += Kel1[2][4]   \n",
+    "    kaug[m][n] += Kel1[2][5]\n",
+    "    kaug[k][i] += Kel1[3][0]\n",
+    "    kaug[k][j] += Kel1[3][1]    \n",
+    "    kaug[k][m] += Kel1[3][2]\n",
+    "    kaug[l][i] += Kel1[4][0]    \n",
+    "    kaug[l][j] += Kel1[4][1]\n",
+    "    kaug[l][m] += Kel1[4][2]\n",
+    "    kaug[n][i] += Kel1[5][0]    \n",
+    "    kaug[n][j] += Kel1[5][1]\n",
+    "    kaug[n][m] += Kel1[5][2]\n",
+    "   \n",
+    "    \n",
+    "    return kaug"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([[ 1600000.,        0.,        0., -1600000.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,  1228800.,   768000.,        0., -1228800.,   768000.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,   768000.,   640000.,        0.,  -768000.,   320000.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [-1600000.,        0., -1228800.,  1600000.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0., -1228800.,  -768000.,        0.,  1228800.,  -768000.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,   768000.,   320000.,        0.,  -768000.,   640000.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.]])"
+      ]
+     },
+     "execution_count": 14,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "Kaug(0)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def MasterStiffness():\n",
+    "# Calculate the Master Stiffness matrix:\n",
+    "# 1. Get the x & y coordinates of each node connected to element i\n",
+    "# 2. Calculate the stiffness matrix for element i\n",
+    "# 3. Augment the elemental stiffness matrix to the size of K\n",
+    "# 4. Add it to K, loop over the remaining elements\n",
+    "    K = np.zeros([DoF*len(nodes), DoF*len(nodes)])\n",
+    "    for i in range(len(elements)):\n",
+    "        nodesXY = XY(nodes, elements, i)\n",
+    "        K += Kaug(i)\n",
+    "    return K"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([[ 1600000.,        0.,        0., -1600000.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,  1228800.,   768000.,        0., -1228800.,   768000.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,   768000.,   640000.,        0.,  -768000.,   320000.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [-1600000.,        0., -1228800.,  3200000.,        0.,        0.,\n",
+       "        -1600000.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0., -1228800.,  -768000.,        0.,  2457600.,        0.,\n",
+       "               0., -1228800.,   768000.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,   768000.,   320000.,        0.,        0.,  1280000.,\n",
+       "               0.,  -768000.,   320000.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0., -1600000.,        0., -1228800.,\n",
+       "         3200000.,        0.,        0., -1600000.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0., -1228800.,  -768000.,\n",
+       "               0.,  2457600.,        0.,        0., -1228800.,   768000.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,   768000.,   320000.,\n",
+       "               0.,        0.,  1280000.,        0.,  -768000.,   320000.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "        -1600000.,        0., -1228800.,  3200000.,        0.,        0.,\n",
+       "        -1600000.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0., -1228800.,  -768000.,        0.,  2457600.,        0.,\n",
+       "               0., -1228800.,   768000.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,   768000.,   320000.,        0.,        0.,  1280000.,\n",
+       "               0.,  -768000.,   320000.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0., -1600000.,        0., -1228800.,\n",
+       "         3200000.,        0.,        0., -1600000.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0., -1228800.,  -768000.,\n",
+       "               0.,  2457600.,        0.,        0., -1228800.,   768000.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,   768000.,   320000.,\n",
+       "               0.,        0.,  1280000.,        0.,  -768000.,   320000.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "        -1600000.,        0., -1228800.,  3200000.,        0.,        0.,\n",
+       "        -1600000.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0., -1228800.,  -768000.,        0.,  2457600.,        0.,\n",
+       "               0., -1228800.,   768000.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,   768000.,   320000.,        0.,        0.,  1280000.,\n",
+       "               0.,  -768000.,   320000.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0., -1600000.,        0., -1228800.,\n",
+       "         3200000.,        0.,        0., -1600000.,        0.,        0.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0., -1228800.,  -768000.,\n",
+       "               0.,  2457600.,        0.,        0., -1228800.,   768000.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,   768000.,   320000.,\n",
+       "               0.,        0.,  1280000.,        0.,  -768000.,   320000.,\n",
+       "               0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "        -1600000.,        0., -1228800.,  3200000.,        0.,        0.,\n",
+       "        -1600000.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0., -1228800.,  -768000.,        0.,  2457600.,        0.,\n",
+       "               0., -1228800.,   768000.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,   768000.,   320000.,        0.,        0.,  1280000.,\n",
+       "               0.,  -768000.,   320000.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0., -1600000.,        0., -1228800.,\n",
+       "         1600000.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0., -1228800.,  -768000.,\n",
+       "               0.,  1228800.,  -768000.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,   768000.,   320000.,\n",
+       "               0.,  -768000.,   640000.]])"
+      ]
+     },
+     "execution_count": 16,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "K = MasterStiffness()\n",
+    "K"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([[1, 2, 0],\n",
+       "       [1, 1, 0],\n",
+       "       [9, 2, 0],\n",
+       "       [9, 1, 0]])"
+      ]
+     },
+     "execution_count": 17,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "bc"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[0, 0, 0, 0, -10000.0, 0, 0, -10000.0, 0, 0, -10000.0, 0, 0, -10000.0, 0, 0, -10000.0, 0, 0, -10000.0, 0, 0, -10000.0, 0, 0, 0, 0]\n"
+     ]
+    }
+   ],
+   "source": [
+    "# initialize vectors for the specified displacements and forces. these will be [1 x DoF]\n",
+    "u_specified=[]\n",
+    "F_specified=[0]*DoF*len(nodes)\n",
+    "\n",
+    "# what DoF are specified?\n",
+    "for i in range(len(bc)):\n",
+    "    u_specified.append(DoF*(bc[i,0]-1)+bc[i,1]-1)\n",
+    "# assign the external forces to the corresponding DoF in F   \n",
+    "for i in range(len(forces)):    \n",
+    "    F_specified[int((DoF*(forces[i,0]-1)+forces[i,1])-1)]=forces[i,2]\n",
+    "    \n",
+    "print(F_specified)\n",
+    "u_unknown = np.delete(u,u_specified) # deleting the specified displacments from u\n",
+    "K_reduced = np.delete(K,u_specified,0) # deleting rows\n",
+    "K_reduced = np.delete(K_reduced,u_specified,1) # deleting columns\n",
+    "F_specified = np.delete(F_specified,u_specified) # deleting the forces that correspond to specified displacments"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([[  640000.,        0.,  -768000.,   320000.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.],\n",
+       "       [-1228800.,  3200000.,        0.,        0., -1600000.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.],\n",
+       "       [ -768000.,        0.,  2457600.,        0.,        0., -1228800.,\n",
+       "          768000.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.],\n",
+       "       [  320000.,        0.,        0.,  1280000.,        0.,  -768000.,\n",
+       "          320000.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.],\n",
+       "       [       0., -1600000.,        0., -1228800.,  3200000.,        0.,\n",
+       "               0., -1600000.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.],\n",
+       "       [       0.,        0., -1228800.,  -768000.,        0.,  2457600.,\n",
+       "               0.,        0., -1228800.,   768000.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.],\n",
+       "       [       0.,        0.,   768000.,   320000.,        0.,        0.,\n",
+       "         1280000.,        0.,  -768000.,   320000.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0., -1600000.,        0.,\n",
+       "        -1228800.,  3200000.,        0.,        0., -1600000.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0., -1228800.,\n",
+       "         -768000.,        0.,  2457600.,        0.,        0., -1228800.,\n",
+       "          768000.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,   768000.,\n",
+       "          320000.,        0.,        0.,  1280000.,        0.,  -768000.,\n",
+       "          320000.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0., -1600000.,        0., -1228800.,  3200000.,        0.,\n",
+       "               0., -1600000.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0., -1228800.,  -768000.,        0.,  2457600.,\n",
+       "               0.,        0., -1228800.,   768000.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,   768000.,   320000.,        0.,        0.,\n",
+       "         1280000.,        0.,  -768000.,   320000.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0., -1600000.,        0.,\n",
+       "        -1228800.,  3200000.,        0.,        0., -1600000.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0., -1228800.,\n",
+       "         -768000.,        0.,  2457600.,        0.,        0., -1228800.,\n",
+       "          768000.,        0.,        0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,   768000.,\n",
+       "          320000.,        0.,        0.,  1280000.,        0.,  -768000.,\n",
+       "          320000.,        0.,        0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0., -1600000.,        0., -1228800.,  3200000.,        0.,\n",
+       "               0., -1600000.,        0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0., -1228800.,  -768000.,        0.,  2457600.,\n",
+       "               0.,        0., -1228800.,   768000.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,   768000.,   320000.,        0.,        0.,\n",
+       "         1280000.,        0.,  -768000.,   320000.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0., -1600000.,        0.,\n",
+       "        -1228800.,  3200000.,        0.,        0.,        0.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0., -1228800.,\n",
+       "         -768000.,        0.,  2457600.,        0.,   768000.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,   768000.,\n",
+       "          320000.,        0.,        0.,  1280000.,   320000.],\n",
+       "       [       0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,        0.,        0.,        0.,        0.,\n",
+       "               0.,        0.,   768000.,   320000.,   640000.]])"
+      ]
+     },
+     "execution_count": 19,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "K_reduced"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now we know have everything inside the linear system. We must solve for the unknown."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# np.linalg.lstsq does the matrix left division. \n",
+    "# it returns the residuals, rank, etc. of the calculation, so we just grab the list, which is element [0]\n",
+    "u_unknown = np.linalg.lstsq(K_reduced,F_specified, rcond=None)[0]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([-1.64062500e+00, -2.52000000e+00, -1.99381510e+00, -1.50390625e+00,\n",
+       "       -3.78000000e+00, -3.66210938e+00, -1.13281250e+00, -3.88500000e+00,\n",
+       "       -4.76074219e+00, -6.05468750e-01, -3.12000000e+00, -5.14322917e+00,\n",
+       "       -7.67499989e-15, -1.89000000e+00, -4.76074219e+00,  6.05468750e-01,\n",
+       "       -6.60000000e-01, -3.66210938e+00,  1.13281250e+00,  1.05000000e-01,\n",
+       "       -1.99381510e+00,  1.50390625e+00,  1.64062500e+00])"
+      ]
+     },
+     "execution_count": 21,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "u_unknown\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 22,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# create a list of all the displacement degrees of freedom (DoF)\n",
+    "u_DoF=[]\n",
+    "for i in range(len(u)):\n",
+    "    u_DoF.append(i)\n",
+    "\n",
+    "# get the index locations of the free degrees of freedom (DoF)    \n",
+    "u_free = (list(set(u_DoF) - set(u_specified)))    \n",
+    "\n",
+    "# put the free (formerly unknown) displacements into the displacement vector u\n",
+    "np.put(u,u_free,u_unknown)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 23,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([ 0.00000000e+00,  0.00000000e+00, -1.64062500e+00, -2.52000000e+00,\n",
+       "       -1.99381510e+00, -1.50390625e+00, -3.78000000e+00, -3.66210938e+00,\n",
+       "       -1.13281250e+00, -3.88500000e+00, -4.76074219e+00, -6.05468750e-01,\n",
+       "       -3.12000000e+00, -5.14322917e+00, -7.67499989e-15, -1.89000000e+00,\n",
+       "       -4.76074219e+00,  6.05468750e-01, -6.60000000e-01, -3.66210938e+00,\n",
+       "        1.13281250e+00,  1.05000000e-01, -1.99381510e+00,  1.50390625e+00,\n",
+       "        0.00000000e+00,  0.00000000e+00,  1.64062500e+00])"
+      ]
+     },
+     "execution_count": 23,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "u"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 24,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([[ 0.        ,  0.        ],\n",
+       "       [-2.52      , -1.9938151 ],\n",
+       "       [-3.78      , -3.66210938],\n",
+       "       [-3.885     , -4.76074219],\n",
+       "       [-3.12      , -5.14322917],\n",
+       "       [-1.89      , -4.76074219],\n",
+       "       [-0.66      , -3.66210938],\n",
+       "       [ 0.105     , -1.9938151 ],\n",
+       "       [ 0.        ,  0.        ]])"
+      ]
+     },
+     "execution_count": 24,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "nodes_new = nodes + np.reshape(u,(len(nodes),DoF))[:,0:2]\n",
+    "nodes_new\n",
+    "np.reshape(u,(len(nodes),DoF))[:,0:2]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 25,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "# set axes aspect ratio = 1\n",
+    "# turn off the axis\n",
+    "plt.axes().set_aspect('equal') \n",
+    "plt.axis('off') \n",
+    "\n",
+    "# plot the nodes\n",
+    "plt.plot(nodes[:,0], nodes[:,1], 'k.',markersize=15)\n",
+    "plt.plot(nodes_new[:,0], nodes_new[:,1], 'r.',markersize=15)\n",
+    "# plot the elements\n",
+    "# loop through the list of elements, grab the x position and y position of each node associated with that element\n",
+    "# the line: 'elements[i,0]-1' is necessary because python starts counting at 0, not 1 (like MATLAB)\n",
+    "for i in range(len(elements)):\n",
+    "    plt.plot(np.array([\n",
+    "    nodes[int(elements[i,0]-1),0], nodes[int(elements[i,1]-1),0]]),\n",
+    "         np.array([nodes[int(elements[i,0]-1),1], nodes[int(elements[i,1]-1),1]]),\n",
+    "         'k-')\n",
+    "# plot the deformed elements\n",
+    "for i in range(len(elements)):\n",
+    "    plt.plot(np.array([\n",
+    "    nodes_new[int(elements[i,0]-1),0], nodes_new[int(elements[i,1]-1),0]]),\n",
+    "         np.array([nodes_new[int(elements[i,0]-1),1], nodes_new[int(elements[i,1]-1),1]]),\n",
+    "         'r-')    \n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.7.6"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
